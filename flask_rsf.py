@@ -1,41 +1,47 @@
 import os
 import logging
+
+import pyrax
+import pyrax.exceptions as exc
+import pyrax.utils as utils
+
 from collections import defaultdict
 
 from flask import url_for as flask_url_for
 from flask import current_app
-from boto.s3.connection import S3Connection
-from boto.exception import S3CreateError
-from boto.s3.key import Key
 
-logger = logging.getLogger('flask_s3')
+logger = logging.getLogger('flask_rackassets')
 
 def url_for(endpoint, **values):
     """
     Generates a URL to the given endpoint.
 
-    If the endpoint is for a static resource then an Amazon S3 URL is 
+    If the endpoint is for a static resource then a Rackspace Cloud File URL is 
     generated, otherwise the call is passed on to `flask.url_for`.
 
     Because this function is set as a jinja environment variable when 
-    `FlaskS3.init_app` is invoked, this function replaces `flask.url_for` in 
+    `FlaskRSF.init_app` is invoked, this function replaces `flask.url_for` in 
     templates automatically. It is unlikely that this function will 
     need to be directly called from within your application code, unless you 
     need to refer to static assets outside of your templates.
     """
     app = current_app
-    if 'S3_BUCKET_NAME' not in app.config:
-        raise ValueError("S3_BUCKET_NAME not found in app configuration.")
+    if 'RSF_CONTAINER_NAME' not in app.config:
+        raise ValueError("RSF_CONTAINER_NAME not found in app configuration.")
     
-    if app.debug and not app.config['USE_S3_DEBUG']:
+    if app.debug and not app.config['USE_RSF_DEBUG']:
         return flask_url_for(endpoint, **values)
     
     if endpoint == 'static' or endpoint.endswith('.static'):
+        pyrax.set_credentials(['RSF_USERNAME'], ['RSF_API_KEY'])
+        cf = pyrax.cloudfiles
+        cont = cf.create_container(app.config['RSF_CONTAINER_NAME'])
         scheme = 'http'
-        if app.config['S3_USE_HTTPS']:
+        bucket_path = cont.cdn_uri
+        if app.config['RSF_USE_HTTPS']:
             scheme = 'https'
-        bucket_path = '%s.%s' % (app.config['S3_BUCKET_NAME'], 
-                                 app.config['S3_BUCKET_DOMAIN'])
+            bucket_path = cont.cdn_ssl_uri
+        bucket_path = re.sub(r'(http[s]*://)', r'', bucket_path)
         urls = app.url_map.bind(bucket_path, url_scheme=scheme)
         return urls.build(endpoint, values=values, force_external=True)
     return flask_url_for(endpoint, **values)
@@ -85,24 +91,22 @@ def _static_folder_path(static_url, static_folder, static_asset):
     # Now bolt the static url path and the relative asset location together
     return u'%s/%s' % (static_url.rstrip('/'), rel_asset.lstrip('/'))
 
-def _write_files(static_url_loc, static_folder, files, bucket, ex_keys=None):
+def _write_files(static_url_loc, static_folder, files, container, ex_keys=None):
     """ Writes all the files inside a static folder to S3. """
     for file_path in files:
         asset_loc = _path_to_relative_url(file_path)
         key_name = _static_folder_path(static_url_loc, static_folder, asset_loc)
-        logger.debug("Uploading %s to %s as %s" % (file_path, bucket, key_name))
+        logger.debug("Uploading %s to %s as %s" % (file_path, container, key_name))
         if ex_keys and key_name in ex_keys:
             logger.debug("%s excluded from upload" % key_name)
         else:
-            k = Key(bucket=bucket, name=key_name)
-            k.set_contents_from_filename(file_path)
-            k.make_public()
+            container.upload_file(file_path)
 
-def _upload_files(files_, bucket):
+def _upload_files(files_, container):
     for (static_folder, static_url), names in files_.iteritems():
-        _write_files(static_url, static_folder, names, bucket)
+        _write_files(static_url, static_folder, names, container)
 
-def create_all(app, user=None, password=None, bucket_name=None, 
+def create_all(app, user=None, api_key=None, container_name=None, 
                location='', include_hidden=False):
     """
     Uploads of the static assets associated with a Flask application to Amazon S3.
@@ -139,32 +143,30 @@ def create_all(app, user=None, password=None, bucket_name=None,
     /dev/BucketRestrictions.html
 
     """
-    if user is None and 'AWS_ACCESS_KEY_ID' in app.config:
-        user = app.config['AWS_ACCESS_KEY_ID']
-    if password is None and 'AWS_SECRET_ACCESS_KEY' in app.config:
-        password = app.config['AWS_SECRET_ACCESS_KEY']
-    if bucket_name is None and 'S3_BUCKET_NAME' in app.config:
-        bucket_name = app.config['S3_BUCKET_NAME']
-    if not bucket_name:
-        raise ValueError("No bucket name provided.")
+    if user is None and 'RSF_USERNAME' in app.config:
+        user = app.config['RSF_USERNAME']
+    if api_key is None and 'RSF_API_KEY' in app.config:
+        api_key = app.config['RSF_API_KEY']
+    if container_name is None and 'RSF_CONTAINER_NAME' in app.config:
+        contcontainer_nameainer = app.config['RSF_CONTAINER_NAME']
+    if not container_name:
+        raise ValueError("No container name provided.")
     # build list of static files
     all_files = _gather_files(app, include_hidden)
     logger.debug("All valid files: %s" % all_files)
-    conn = S3Connection(user, password) # connect to s3
-    # get_or_create bucket
-    try:
-        bucket = conn.create_bucket(bucket_name, location=location)
-        bucket.make_public(recursive=True)
-    except S3CreateError as e:
-        raise e
-    _upload_files(all_files, bucket)
+    pyrax.set_credentials(['RSF_USERNAME'], ['RSF_API_KEY'])
+    cf = pyrax.cloudfiles
+    # get_or_create container
+    container = cf.create_container(container_name)
+    container.make_public(ttl=1200)
+    _upload_files(all_files, container)
 
 
-class FlaskS3(object):
+class FlaskRSF(object):
     """
-    The FlaskS3 object allows your application to use Flask-S3.
+    The FlaskRSF object allows your application to use Flask-S3.
 
-    When initialising a FlaskS3 object you may optionally provide your 
+    When initialising a FlaskRSF object you may optionally provide your 
     :class:`flask.Flask` application object if it is ready. Otherwise, you may
     provide it later by using the :meth:`init_app` method.
 
@@ -183,13 +185,12 @@ class FlaskS3(object):
 
         :param app: the :class:`flask.Flask` application object.
         """
-        defaults = [('S3_USE_HTTPS', True), 
-                    ('USE_S3', True), 
-                    ('USE_S3_DEBUG', False),
-                    ('S3_BUCKET_DOMAIN', 's3.amazonaws.com')]
+        defaults = [('RSF_USE_HTTPS', True), 
+                    ('USE_RSF', True), 
+                    ('USE_RSF_DEBUG', False)]
         for k, v in defaults:
             app.config.setdefault(k, v)
 
-        if app.config['USE_S3']:
+        if app.config['USE_RSF']:
             app.jinja_env.globals['url_for'] = url_for
 

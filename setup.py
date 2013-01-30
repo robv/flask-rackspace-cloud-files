@@ -1,28 +1,28 @@
 """
-Flask-S3
+Flask-RSF
 -------------
 
-Easily serve your static files from Amazon S3.
+Easily serve your static files from Rackspace Cloud Files.
 """
 from setuptools import setup
 
 
 setup(
-    name='Flask-S3',
-    version='0.1.3',
-    url='http://github.com/e-dard/flask-s3',
+    name='Flask-RSF',
+    version='0.1.0',
+    url='http://github.com/robv/flask-rackassets',
     license='WTFPL',
-    author='Edward Robinson',
-    author_email='me@eddrobinson.net',
-    description='Seamlessly serve the static files of your Flask app from Amazon S3',
+    author='Robert Velasquez',
+    author_email='thisisrobv@gmail.com',
+    description='Seamlessly serve the static files of your Flask app from Rackspace Cloud Files',
     long_description=__doc__,
-    py_modules=['flask_s3'],
+    py_modules=['fask_rsf'],
     zip_safe=False,
     include_package_data=True,
     platforms='any',
     install_requires=[
         'Flask',
-        'Boto>=2.5.2'
+        'pyrax>=1.2.5'
     ],
     tests_require=['nose', 'mock'],
     classifiers=[
