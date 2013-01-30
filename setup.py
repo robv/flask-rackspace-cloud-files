@@ -9,14 +9,14 @@ from setuptools import setup
 
 setup(
     name='Flask-RSF',
-    version='0.1.1',
+    version='0.1',
     url='http://github.com/robv/flask-rackspace-cloud-files',
     license='WTFPL',
     author='Robert Velasquez',
     author_email='thisisrobv@gmail.com',
     description='Seamlessly serve the static files of your Flask app from Rackspace Cloud Files',
     long_description=__doc__,
-    py_modules=['fask_rsf'],
+    py_modules=['flask_rsf'],
     zip_safe=False,
     include_package_data=True,
     platforms='any',
