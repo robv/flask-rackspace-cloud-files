@@ -9,8 +9,8 @@ from setuptools import setup
 
 setup(
     name='Flask-RSF',
-    version='0.1.0',
-    url='http://github.com/robv/flask-rackassets',
+    version='0.1.1',
+    url='http://github.com/robv/flask-rackspace-cloud-files',
     license='WTFPL',
     author='Robert Velasquez',
     author_email='thisisrobv@gmail.com',
@@ -22,7 +22,7 @@ setup(
     platforms='any',
     install_requires=[
         'Flask',
-        'pyrax>=1.2.5'
+        'pyrax'
     ],
     tests_require=['nose', 'mock'],
     classifiers=[
